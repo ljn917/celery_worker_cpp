@@ -138,6 +138,11 @@ struct client {
         throw_on_error();
     }
     
+    void set(const std::string& key, const std::string& value, uint32_t ex_sec) {
+        reply_t reply = redisCommand(context, "SET %b %b EX %u", key.c_str(), key.size(), value.c_str(), value.size(), ex_sec);
+        throw_on_error();
+    }
+    
     int publish(const std::string& channel, const std::string& message) {
         reply_t reply = redisCommand(context, "PUBLISH %b %b", channel.c_str(), channel.size(), message.c_str(), message.size());
         throw_on_error();
@@ -167,7 +172,7 @@ struct client {
     }
     
     void store(const std::string& key, const std::string& value) {
-        set(key, value);
+        set(key, value, 86400);
         publish(key, value);
     }
 };
