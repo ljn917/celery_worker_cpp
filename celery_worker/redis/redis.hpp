@@ -128,6 +128,11 @@ struct client {
         }
     }
     
+    void select(const int db) {
+        reply_t reply = redisCommand(context, "SELECT %u", db);
+        throw_on_error();
+    }
+    
     void set(const std::string& key, const std::string& value) {
         reply_t reply = redisCommand(context, "SET %b %b", key.c_str(), key.size(), value.c_str(), value.size());
         throw_on_error();

@@ -27,6 +27,9 @@ set(LIBS ${LIBS} Rabbitmqc::Rabbitmqc)
 #find_package(OpenSSL REQUIRED)
 #set(LIBS ${LIBS} OpenSSL::SSL OpenSSL::Crypto)
 
+find_package(Threads REQUIRED)
+set(LIBS ${LIBS} Threads::Threads)
+
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_SOURCE_DIR}/bin_release)
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_SOURCE_DIR}/bin_debug)

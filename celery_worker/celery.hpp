@@ -3,34 +3,57 @@
 #include <sstream>
 #include <exception>
 #include <functional>
+#include <mutex>
+#include <thread>
+#include <vector>
 
-#include <json/json.h>
-
-#include "rabbitmq/rabbitmq.hpp"
-#include "redis/redis.hpp"
+#include "db_config.hpp"
 
 namespace celery {
 
-class worker {
+class worker_pool {
 private:
     using Func = std::function<Json::Value (const Json::Value& args, const Json::Value& kwargs)>;
     
-    rabbitmq::connection broker_; // RabbitMQ for jobs
-    redis::client backend_; // redis for results
+    std::vector<rabbitmq::connection> broker_; // RabbitMQ for jobs
+    std::vector<redis::client> backend_; // redis for results
+    
+    std::vector<std::thread> thread_pool;
     
     Json::StreamWriterBuilder json_builder_{};
     
 public:
-    worker(worker&)=delete;
-    worker(worker&&)=default;
-    worker& operator=(worker&)=delete;
-    worker& operator=(worker&&)=default;
+    worker_pool(worker_pool&)=delete;
+    worker_pool(worker_pool&&)=default;
+    worker_pool& operator=(worker_pool&)=delete;
+    worker_pool& operator=(worker_pool&&)=default;
     
-    explicit worker(rabbitmq::connection&& broker, redis::client&& backend) : broker_(std::move(broker)), backend_(std::move(backend)) {}
+    explicit worker_pool(
+        const Json::Value& broker_config,
+        const Json::Value& backend_config,
+        Func&& f,
+        int pool_size = 0
+    ) {
+        if(pool_size <= 0) {
+            pool_size = std::thread::hardware_concurrency();
+        }
+        
+        for(int i = 0; i < pool_size; i++) {
+            broker_.emplace_back(rabbitmq_from_config(broker_config));
+            backend_.emplace_back(redis_from_config(backend_config));
+            thread_pool.emplace_back(&worker_pool::loop, this, f, i);
+        }
+    }
     
-    void loop(Func&& f) {
+    ~worker_pool() {
+        for(auto& t: thread_pool) {
+            t.join();
+        }
+    }
+    
+    void loop(Func&& f, int i) {
         while(true) {
-            const auto envelope = broker_.consume();
+            const auto envelope = broker_[i].consume();
             
             std::string message{envelope.get_message_body()};
             
@@ -62,10 +85,9 @@ public:
             // insert retval into the result queue
             const auto backend_key = "celery-task-meta-" + task_id;
             const auto backend_val = Json::writeString(json_builder_, result);
-            backend_.store(backend_key, backend_val);
+            backend_[i].store(backend_key, backend_val);
             
-            // confirm job complete
-            broker_.ack(envelope);
+            broker_[i].ack(envelope);
         }
     }
 };
